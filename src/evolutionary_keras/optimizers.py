@@ -12,7 +12,11 @@ from evolutionary_keras.utilities import (
     parse_eval,
     compatibility_numpy,
 )
+from keras.utils.layer_utils import count_params
 import cma
+from numpy import sqrt, log, fmax, floor, fabs
+import numpy as np
+from numpy import sqrt, log, fmax, floor, fabs, fmin, zeros, identity, transpose
 
 
 class EvolutionaryStrategies(Optimizer):
@@ -76,9 +80,7 @@ class NGA(EvolutionaryStrategies):
 
     # In case the user wants to adjust sigma_init
     # population_size or mutation_rate parameters the NGA method has to be initiated
-    def __init__(
-        self, sigma_init=15, population_size=80, mutation_rate=0.05, *args, **kwargs
-    ):
+    def __init__(self, sigma_init=15, population_size=80, mutation_rate=0.05, *args, **kwargs):
         self.sigma_init = sigma_init
         self.population_size = population_size
         self.mutation_rate = mutation_rate
@@ -151,17 +153,13 @@ class NGA(EvolutionaryStrategies):
                 # Mutate weights and biases by adding values from random distributions
                 sigma_eff = self.sigma * (self.n_generations ** (-np.random.rand()))
                 if change_both_wb:
-                    randn_mutation = sigma_eff * np.random.randn(
-                        self.shape[layer - 1][0]
-                    )
+                    randn_mutation = sigma_eff * np.random.randn(self.shape[layer - 1][0])
                     mutant[layer - 1][:, node_in_layer] += randn_mutation
                     mutant[layer][node_in_layer] += sigma_eff * np.random.randn()
                 else:
                     change_weight = np.random.randint(2, dtype="bool")
                     if change_weight:
-                        randn_mutation = sigma_eff * np.random.randn(
-                            self.shape[layer - 1][0]
-                        )
+                        randn_mutation = sigma_eff * np.random.randn(self.shape[layer - 1][0])
                         mutant[layer - 1][:, node_in_layer] += randn_mutation
                     else:
                         mutant[layer][node_in_layer] += sigma_eff * np.random.randn()
@@ -228,7 +226,7 @@ class CMA(EvolutionaryStrategies):
 
     Parameters
     ----------
-        `sigma_init`: int
+        `sigma`: int
             Allows adjusting the initial sigma
         `population_size`: int
             Number of mutants to be generated per iteration
@@ -240,11 +238,9 @@ class CMA(EvolutionaryStrategies):
 
     def __init__(
         self,
-        sigma_init=0.1,
-        target_value=None,
+        sigma=0.1,
         population_size=None,
-        max_evaluations=None,
-        verbosity = 1,
+        verbosity=1,
         *args,
         **kwargs
     ):
@@ -253,25 +249,11 @@ class CMA(EvolutionaryStrategies):
         is dealth with by 'cma'. The default 'epochs' in EvolModel is one, meaning 'run step' is
         only called once during training.
         """
-        self.sigma_init = sigma_init
+        self.sigma = sigma
         self.shape = None
         self.length_flat_layer = None
         self.trainable_weights_names = None
-        self.verbosity = verbosity
-        if verbosity == 0:
-            self.verbosity = -9
-        else:
-            self.verbosity = 1
-  
-
-        # These options do not all work as advertised
-        self.options = {"verb_log": 0, "verbose": self.verbosity, "verb_disp": 1000}
-        if target_value:
-            self.options["ftarget"] = target_value
-        if population_size:
-            self.options["popsize"] = population_size
-        if max_evaluations:
-            self.options["maxfevals"] = max_evaluations
+        self.population_size = population_size
 
         super(CMA, self).__init__(*args, **kwargs)
 
@@ -279,15 +261,39 @@ class CMA(EvolutionaryStrategies):
         """ Function to be called by the model during compile time. Register the model `model` with
         the optimizer.
         """
-        # Here we can perform some checks as well
         self.model = model
         self.shape = self.get_shape()
+        self.n = count_params(self.model.trainable_weights)  
+
+        self.counteval = 0
+        if self.population_size == None:
+            self.Lambda = int(4 + floor(3 * log(self.n)))
+        else:
+            self.Lambda = self.population_size
+        self.mu = int(self.Lambda / 2)
+        self.wghts = log(self.mu+0.5)-log([i+1 for i in range(self.mu)])
+        self.mueff = np.sum(self.wghts)**2/np.sum(self.wghts**2)
+
+        alpha_cov = 2
+        self.csigma = (self.mueff + 2) / (self.n + self.mueff + 5)
+        self.dsigma = 1 + 2 * fmax(0, (sqrt((self.mueff - 1) / (self.n + 1))) - 1) + self.csigma
+        self.cc = (4 + self.mueff / self.n) / (self.n + 4 + 2 * self.mueff / self.n)
+        self.c1 = alpha_cov / ((self.n + 1.3)**2  + self.mueff)
+        cmupr = alpha_cov * (self.mueff - 2 + 1 / self.mueff) / ((self.n + 2) ** 2 + alpha_cov * self.mueff / 2)
+        self.cmu = min(1 - self.c1, cmupr)
+
+        self.pc = np.zeros(self.n)
+        self.ps = np.zeros(self.n)
+        self.B = identity(self.n)
+        self.D = identity(self.n)
+        self.C = self.B @ self.D @ transpose(self.B @ self.D)
+        self.eigeneval = 0
+        self.expN = sqrt(self.n) * (1 - 1 / (4 * self.n) + 1 / (21 * self.n **2 ))
+
 
     def get_shape(self):
         # we do all this to keep track of the position of the trainable weights
-        self.trainable_weights_names = [
-            weights.name for weights in self.model.trainable_weights
-        ]
+        self.trainable_weights_names = [weights.name for weights in self.model.trainable_weights]
 
         if self.trainable_weights_names == []:
             raise TypeError("The model does not have any trainable weights!")
@@ -304,8 +310,7 @@ class CMA(EvolutionaryStrategies):
         # The first values of 'self.length_flat_layer' is set to 0 which is helpful in determining
         # the range of weights in the function 'undo_flatten'.
         self.length_flat_layer = [
-            len(np.reshape(weight.numpy(), [-1]))
-            for weight in self.model.trainable_weights
+            len(np.reshape(weight.numpy(), [-1])) for weight in self.model.trainable_weights
         ]
         self.length_flat_layer.insert(0, 0)
 
@@ -340,9 +345,7 @@ class CMA(EvolutionaryStrategies):
             ]
             new_weights.append(np.reshape(flat_layer, layer_shape))
 
-        ordered_names = [
-            weight.name for layer in self.model.layers for weight in layer.weights
-        ]
+        ordered_names = [weight.name for layer in self.model.layers for weight in layer.weights]
 
         new_parent = deepcopy(self.model.get_weights())
         for i, weight in enumerate(self.trainable_weights_names):
@@ -354,30 +357,56 @@ class CMA(EvolutionaryStrategies):
     def run_step(self, x, y):
         """ Wrapper to the optimizer"""
 
-        # Get the nubmer of weights in each keras layer
-        x0 = self.flatten()
-
-        # minimizethis is function that 'cma' aims to minimize
         def minimizethis(flattened_weights):
-            weights = self.undo_flatten(flattened_weights)
-            self.model.set_weights(weights)
+            self.weights = self.undo_flatten(flattened_weights)
+            self.model.set_weights(self.weights)
             loss = parse_eval(self.model.evaluate(x=x, y=y, verbose=0))
             return loss
 
-        # Run the minimization and return the ultimatly selected 1 dimensional layer of weights
-        # 'xopt'.
-        xopt = (
-            cma.CMAEvolutionStrategy(x0, self.sigma_init, self.options)
-            .optimize(minimizethis)
-            .result[0]
+        x0 = self.flatten()
+        arfitness = np.empty(self.Lambda)
+        arz = np.empty((self.Lambda, self.n))
+        arx = np.empty((self.Lambda, self.n))
+        for i in range(self.Lambda):
+            arz[i] = self.sigma * np.random.randn(self.n)
+            arx[i] = x0 + self.sigma * (np.dot(self.B @ self.D, arz[-1]))
+            arfitness[i] = minimizethis(arx[-1])
+
+        arindex = np.argsort(arfitness)
+        xmean = arx[:self.mu].T @ self.wghts
+        zmean = arz[:self.mu].T @ self.wghts
+
+        self.ps = (1 - self.csigma) * self.ps + (sqrt(self.csigma * (2 - self.csigma) * self.mueff)) * self.B @ zmean
+        hl = np.linalg.norm(self.ps) / sqrt(1 - (1 - self.csigma)) ** (2 * self.counteval / self.Lambda)
+        hr = (1.4 + 2 / (self.n + 1)) * self.expN
+        if hl < hr:
+            hsig = 1
+        else:
+            hsig = 0
+        self.pc = (1 - self.cc) * self.pc + hsig * sqrt(self.cc * (2 - self.cc) * self.mueff) * self.B @ self.D * zmean
+
+        self.C = (
+            (1 - self.c1 - self.cmu) * self.C
+            + self.c1 * (self.pc @ self.pc.T + (1 - hsig) * self.cc * (2 - self.cc) * self.C)
+            + self.cmu
+            * (self.B @ self.D @ arz[arindex[:self.mu]].T) @ np.diag(self.wghts) @ (self.B @ self.D @ arz[arindex[:self.mu]].T).T
         )
 
+        self.sigma = self.sigma * np.exp((self.csigma / self.dsigma) * (np.linalg.norm(self.ps) / self.expN - 1))
+
+        if self.counteval - self.eigeneval > (self.Lambda/(self.c1+self.cmu)/self.n)/10:
+            self.eigeneval = self.counteval
+            self.C = np.triu(self.C)+np.transpose(np.triu(self.C,1))
+            self.D, self.B = np.linalg.eig(self.C)
+            self.D = np.diag(sqrt(self.D))
+
         # Transform 'xopt' to the models' weight shape.
+        xopt = arx[arindex[0]]
         selected_parent = self.undo_flatten(xopt)
 
         # Determine the ultimatly selected mutants' performance on the training data.
         self.model.set_weights(selected_parent)
-        score = parse_eval(self.model.evaluate(x=x, y=y, verbose=0))
+        score = arfitness[arindex[0]]      
         return score, selected_parent
 
 
@@ -387,3 +416,60 @@ class BFGS(EvolutionaryStrategies):
 
 class CeresSolver(EvolutionaryStrategies):
     pass
+
+
+
+# wpr = []
+# for i in range(Lambda):
+#     wpr.append(log((Lambda + 1) / 2) - log(i + 1))
+# mu = int(mu)
+
+# psumwgt = 0
+# nsumwgt = 0
+# psumwgtsqr = 0
+# nsumwgtsqr = 0
+# for i in range(Lambda):
+#     if i < mu:
+#         psumwgt += wpr[i]
+#         psumwgtsqr += wpr[i] ** 2
+#     else:
+#         nsumwgt += wpr[i]
+#         nsumwgtsqr += wpr[i] ** 2
+
+# mu_eff = psumwgt * psumwgt / psumwgtsqr
+# mu_eff_minus = nsumwgt ** 2 / nsumwgtsqr
+
+# alpha_cov = 2
+# cmupr = alpha_cov * (mu_eff - 2 + 1 / mu_eff) / ((n + 2) ** 2 + alpha_cov * mu_eff / 2)
+
+# csigma = (mu_eff + 2.0) / (n + mu_eff + 5.0)
+# dsigma = 1.0 + 2.0 * fmax(0, (sqrt((mu_eff - 1.0) / (n + 1.0))) - 1.0) + csigma
+# cc = (4.0 + mu_eff / n) / (n + 4.0 + 2.0 * mu_eff / n)
+# c1 = alpha_cov / (pow(n + 1.3, 2.0) + mu_eff)
+# cmu = min(1.0 - c1, cmupr)
+
+# sumwgtpos = 0
+# sumwgtneg = 0
+# for i in range(Lambda):
+#     if wpr[i] > 0:
+#         sumwgtpos += wpr[i]
+#     else:
+#         sumwgtneg += fabs(wpr[i])
+
+# alpha_mu_minus = 1.0 + c1 / cmu
+# alpha_mueff_minus = 1.0 + (2 * mu_eff_minus) / (mu_eff + 2.0)
+# alpha_posdef_minus = (1.0 - c1 - cmu) / (n * cmu)
+# alpha_min = fmin(alpha_mu_minus, fmin(alpha_mueff_minus, alpha_posdef_minus))
+
+# eigenInterval = (Lambda / (c1 + cmu) / n) / 10.0
+
+# # ********************************** Normalising weights  **********************************
+# wgts = zeros(Lambda)
+# for i in range(Lambda):
+#     if wpr[i] > 0:
+#         wgts[i] = wpr[i] * 1 / sumwgtpos
+#     else:
+#         wgts[i] = wpr[i] * alpha_min / sumwgtneg
+
+# sumtestpos = sum(wgts[:mu])
+# sumtestneg = sum(wgts[mu:])

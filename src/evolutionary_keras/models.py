@@ -6,6 +6,11 @@ from keras.callbacks.callbacks import History
 import evolutionary_keras.optimizers as Evolutionary_Optimizers
 from evolutionary_keras.utilities import parse_eval
 
+from numpy.random import seed
+seed(1)
+import tensorflow
+tensorflow.random.set_seed(1)
+
 log = logging.getLogger(__name__)
 
 # Dictionary of the new evolutionay optimizers
@@ -40,12 +45,14 @@ class EvolModel(Model):
             opt = optimizer_dict.get(optimizer.lower())
             # And instanciate it with default values
             optimizer = opt()
+            optimizer.on_compile(self)
         # Check whether the optimizer is an evolutionary optimizer
         if isinstance(optimizer, Evolutionary_Optimizers.EvolutionaryStrategies):
             self.is_genetic = True
             self.opt_instance = optimizer
+            optimizer.on_compile(self)
 
-        optimizer.on_compile(self)
+        
 
     def compile(self, optimizer="rmsprop", **kwargs):
         """ Compile """
@@ -70,11 +77,11 @@ class EvolModel(Model):
         #             x_val = validation_data[0]
         #             y_val = validation_data[1]
 
-        if isinstance(self.opt_instance, Evolutionary_Optimizers.CMA) and epochs != 1:
-            epochs = 1
-            log.warning(
-                "The optimizer determines the number of generations, set epochs will be ignored."
-            )
+        # if isinstance(self.opt_instance, Evolutionary_Optimizers.CMA) and epochs != 1:
+        #     epochs = 1
+        #     log.warning(
+        #         "The optimizer determines the number of generations, set epochs will be ignored."
+        #     )
 
         metricas = self.metrics_names
         for epoch in range(epochs):

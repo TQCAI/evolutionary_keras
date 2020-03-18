@@ -11,15 +11,24 @@ import keras
 from keras.datasets import mnist
 from keras import backend as K
 from keras.layers import Dense, Input, Flatten
+from keras import optimizers
 
 from evolutionary_keras.models import EvolModel
-# from cmaes import CMA
 import evolutionary_keras.optimizers
+
+from numpy.random import seed
+seed(1)
+import tensorflow
+tensorflow.random.set_seed(1)
+
+
+# from cmaes import CMA
+# import evolutionary_keras
 
 
 batch_size = 128
 num_classes = 10
-epochs = 40000
+epochs = 3000
 
 max_epochs = 40000
 
@@ -52,14 +61,15 @@ y_test = keras.utils.to_categorical(y_test, num_classes)
 
 inputs = Input(shape=(28, 28, 1))
 flatten = Flatten()(inputs)
-dense = Dense(64, activation="relu")(flatten)
-dense = Dense(64, activation="relu")(dense)
-prediction = Dense(10, activation="softmax")(dense)
+dense = Dense(64, activation="relu", trainable=False)(flatten)
+dense = Dense(64, activation="relu", trainable=False)(dense)
+dense = Dense(20, activation="relu", trainable=False)(dense)
+prediction = Dense(10, activation="sigmoid")(dense)
 
 model = EvolModel(inputs=inputs, outputs=prediction)
 
-myopt = evolutionary_keras.optimizers.NGA(population_size=2, sigma_original=15)
-model.compile(optimizer="nga", loss="categorical_crossentropy", metrics=["accuracy"])
+myopt = evolutionary_keras.optimizers.CMA(sigma=0.3, population_size=20)
+model.compile(optimizer=myopt, loss="categorical_crossentropy", metrics=["accuracy"])
 
 history = model.fit(
     x=x_train,
