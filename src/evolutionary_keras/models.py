@@ -1,14 +1,17 @@
 """ Implementation of GA Model """
 
 import logging
-from keras.models import Model
+
+import tensorflow
 from keras.callbacks.callbacks import History
+from keras.models import Model
+from numpy.random import seed
+
 import evolutionary_keras.optimizers as Evolutionary_Optimizers
 from evolutionary_keras.utilities import parse_eval
 
-from numpy.random import seed
 seed(1)
-import tensorflow
+
 tensorflow.random.set_seed(1)
 
 log = logging.getLogger(__name__)
@@ -52,8 +55,6 @@ class EvolModel(Model):
             self.opt_instance = optimizer
             optimizer.on_compile(self)
 
-        
-
     def compile(self, optimizer="rmsprop", **kwargs):
         """ Compile """
         self.parse_optimizer(optimizer)
@@ -64,16 +65,12 @@ class EvolModel(Model):
         else:
             super().compile(optimizer=optimizer, **kwargs)
 
-    def perform_genetic_fit(
-        self, x=None, y=None, epochs=1, verbose=0, validation_data=None
-    ):
+    def perform_genetic_fit(self, x=None, y=None, epochs=1, verbose=0, validation_data=None):
         # Prepare the history for the initial epoch
         self.history.on_train_begin()
         # Validation data is currently not being used!!
         if validation_data is not None:
-            log.warning(
-                "Validation data is not used at the moment by the Genetic Algorithms!!"
-            )
+            log.warning("Validation data is not used at the moment by the Genetic Algorithms!!")
         #             x_val = validation_data[0]
         #             y_val = validation_data[1]
 
@@ -113,11 +110,7 @@ class EvolModel(Model):
         """
         if self.is_genetic:
             result = self.perform_genetic_fit(
-                x=x,
-                y=y,
-                epochs=epochs,
-                verbose=verbose,
-                validation_data=validation_data,
+                x=x, y=y, epochs=epochs, verbose=verbose, validation_data=validation_data,
             )
         else:
             result = super().fit(
@@ -126,6 +119,6 @@ class EvolModel(Model):
                 validation_data=validation_data,
                 epochs=epochs,
                 verbose=verbose,
-                #**kwargs,
+                # **kwargs,
             )
         return result
