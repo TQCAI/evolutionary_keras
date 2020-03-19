@@ -275,8 +275,8 @@ class CMA(EvolutionaryStrategies):
             * (self.mueff - 2 + 1 / self.mueff)
             / ((self.n + 2) ** 2 + alpha_cov * self.mueff / 2)
         )
-
         self.cmu = np.fmin(1 - self.c1, cmupr)
+        
         self.alpha_mu_minus = 1 + self.c1 / self.cmu
         self.alpha_mueff_minus = 1 + (2 * self.mueff_minus) / (self.mueff + 2)
         self.alpha_posdef_minus = (1 - self.c1 - self.cmu) / (self.n * self.cmu)
@@ -371,16 +371,17 @@ class CMA(EvolutionaryStrategies):
         """ Wrapper to the optimizer"""
 
         if self.counteval == 0:
+            self.epoch = 0
             loss = parse_eval(self.model.evaluate(x=x, y=y, verbose=0))
             print(f"The initial loss is {loss}")
-
-        self.counteval += 1
+        self.epoch += 1
 
         self.xmean = self.flatten()
         arfitness = empty(self.Lambda)
         arz = empty((self.Lambda, self.n))
         arx = empty((self.Lambda, self.n))
         for i in range(self.Lambda):
+            self.counteval += 1
             arz[i] = self.sigma * randn(self.n)
             arx[i] = self.xmean + self.sigma * self.B @ self.D @ arz[i]
             arfitness[i] = self.minimizethis(weights=arx[i], x=x, y=y)
@@ -425,7 +426,7 @@ class CMA(EvolutionaryStrategies):
 
         if (
             arfitness[arindex[0]]
-            > (1 - 1 / 10000) * arfitness[arindex[int(np.ceil(0.7 * self.Lambda))]]
+            > (1 - 1 / 50000) * arfitness[arindex[int(np.ceil(0.7 * self.Lambda))]]
         ):
             self.sigma = self.sigma * np.exp(0.2 + self.csigma / self.dsigma)
             print("warning: nearly flat fitness, consider reformulating the objective")
@@ -437,7 +438,7 @@ class CMA(EvolutionaryStrategies):
         # Determine the ultimatly selected mutants' performance on the training data.
         self.model.set_weights(selected_parent)
         score = arfitness[arindex[0]]
-        print(f"score: {score}, \t sigma: {self.sigma}, \t epoch: {self.counteval}")
+        print(f"score: {score}, \t sigma: {self.sigma}, \t epoch: {self.epoch}")
         return score, selected_parent
 
 
