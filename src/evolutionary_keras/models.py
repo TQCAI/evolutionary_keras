@@ -2,17 +2,11 @@
 
 import logging
 
-import tensorflow
 from keras.callbacks.callbacks import History
 from keras.models import Model
-from numpy.random import seed
 
 import evolutionary_keras.optimizers as Evolutionary_Optimizers
 from evolutionary_keras.utilities import parse_eval
-
-seed(1)
-
-tensorflow.random.set_seed(1)
 
 log = logging.getLogger(__name__)
 

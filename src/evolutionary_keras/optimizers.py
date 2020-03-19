@@ -9,7 +9,8 @@ import numpy as np
 from keras.optimizers import Optimizer
 from keras.utils.layer_utils import count_params
 from numpy import (floor, fmax, identity, log, sqrt, transpose,
-                   zeros)
+                   zeros, empty)
+from numpy.random import randint, randn, rand
 
 from evolutionary_keras.utilities import (compatibility_numpy,
                                           get_number_nodes, parse_eval)
@@ -131,7 +132,7 @@ class NGA(EvolutionaryStrategies):
             # TODO seed numpy random at initialization time
             # Note that we might mutate the same node several times for the same mutant
             for _ in range(nodes_to_mutate):
-                mutated_nodes.append(np.random.randint(self.n_nodes))
+                mutated_nodes.append(randint(self.n_nodes))
 
             for i in mutated_nodes:
                 # Find the nodes in their respective layers
@@ -147,18 +148,18 @@ class NGA(EvolutionaryStrategies):
                 node_in_layer = i - count_nodes
 
                 # Mutate weights and biases by adding values from random distributions
-                sigma_eff = self.sigma * (self.n_generations ** (-np.random.rand()))
+                sigma_eff = self.sigma * (self.n_generations ** (-rand()))
                 if change_both_wb:
-                    randn_mutation = sigma_eff * np.random.randn(self.shape[layer - 1][0])
+                    randn_mutation = sigma_eff * randn(self.shape[layer - 1][0])
                     mutant[layer - 1][:, node_in_layer] += randn_mutation
-                    mutant[layer][node_in_layer] += sigma_eff * np.random.randn()
+                    mutant[layer][node_in_layer] += sigma_eff * randn()
                 else:
-                    change_weight = np.random.randint(2, dtype="bool")
+                    change_weight = randint(2, dtype="bool")
                     if change_weight:
-                        randn_mutation = sigma_eff * np.random.randn(self.shape[layer - 1][0])
+                        randn_mutation = sigma_eff * randn(self.shape[layer - 1][0])
                         mutant[layer - 1][:, node_in_layer] += randn_mutation
                     else:
-                        mutant[layer][node_in_layer] += sigma_eff * np.random.randn()
+                        mutant[layer][node_in_layer] += sigma_eff * randn()
             mutants.append(mutant)
         return mutants
 
@@ -259,13 +260,15 @@ class CMA(EvolutionaryStrategies):
             self.Lambda = int(4 + floor(3 * log(self.n)))
         else:
             self.Lambda = self.population_size
+        print(f"The population size is {self.Lambda}")
         self.mu = int(self.Lambda / 2)
-        self.wghts = log(self.mu + 0.5) - log([i + 1 for i in range(self.mu)])
-        self.mueff = np.sum(self.wghts) ** 2 / np.sum(self.wghts ** 2)
+        self.wghts = log((self.Lambda + 1)/2) - log([i + 1 for i in range(self.Lambda)])
+        self.mueff = np.sum(self.wghts[:self.mu]) ** 2 / np.sum(self.wghts[:self.mu] ** 2)
+        self.mueff_minus = np.sum(self.wghts[self.mu:]) ** 2 / np.sum(self.wghts[self.mu:] ** 2)
 
         alpha_cov = 2
         self.csigma = (self.mueff + 2) / (self.n + self.mueff + 5)
-        self.dsigma = 1 + 2 * fmax(0, (sqrt((self.mueff - 1) / (self.n + 1))) - 1) + self.csigma
+        self.dsigma = 1 + 2 * fmax(0, sqrt((self.mueff - 1) / (self.n + 1)) - 1) + self.csigma
         self.cc = (4 + self.mueff / self.n) / (self.n + 4 + 2 * self.mueff / self.n)
         self.c1 = alpha_cov / ((self.n + 1.3) ** 2 + self.mueff)
         cmupr = (
@@ -273,13 +276,23 @@ class CMA(EvolutionaryStrategies):
             * (self.mueff - 2 + 1 / self.mueff)
             / ((self.n + 2) ** 2 + alpha_cov * self.mueff / 2)
         )
-        self.cmu = min(1 - self.c1, cmupr)
+
+        self.cmu = np.fmin(1 - self.c1, cmupr)
+        self.alpha_mu_minus = 1+self.c1/self.cmu
+        self.alpha_mueff_minus = 1+(2*self.mueff_minus)/(self.mueff+2)
+        self.alpha_posdef_minus = (1-self.c1-self.cmu)/(self.n*self.cmu)
+        self.alpha_min = np.fmin(self.alpha_mu_minus, np.fmin(self.alpha_mueff_minus, self.alpha_posdef_minus))
+
+        self.eigenInterval = self.Lambda / ((self.c1 + self.cmu) * self.n * 10)
+
+        self.wghts[:self.mu] /= np.sum(self.wghts[:self.mu])
+        self.wghts[self.mu:] /= self.alpha_min * np.sum(self.wghts[self.mu:]) 
 
         self.pc = zeros(self.n)
         self.ps = zeros(self.n)
         self.B = identity(self.n)
         self.D = identity(self.n)
-        self.C = self.B @ self.D @ transpose(self.B @ self.D)
+        self.C = self.B @ self.D @ self.D @ self.B.T
         self.eigeneval = 0
         self.expN = sqrt(self.n) * (1 - 1 / (4 * self.n) + 1 / (21 * self.n ** 2))
 
@@ -329,6 +342,7 @@ class CMA(EvolutionaryStrategies):
         'undo_flatten' does the inverse of 'flatten': it takes a 1 dimensional input and returns a
         weight structure that can be loaded into the model.
         """
+
         new_weights = []
         for i, layer_shape in enumerate(self.shape):
             flat_layer = flattened_weights[
@@ -346,27 +360,33 @@ class CMA(EvolutionaryStrategies):
 
         return new_parent
 
+    def minimizethis(self, weights, x, y):
+        weights_model = self.undo_flatten(weights)
+        self.model.set_weights(weights_model)
+        loss = parse_eval(self.model.evaluate(x=x, y=y, verbose=0))
+        return loss
+
     def run_step(self, x, y):
         """ Wrapper to the optimizer"""
 
-        def minimizethis(flattened_weights):
-            self.weights = self.undo_flatten(flattened_weights)
-            self.model.set_weights(self.weights)
+        if self.counteval == 0:
             loss = parse_eval(self.model.evaluate(x=x, y=y, verbose=0))
-            return loss
+            print(f"The initial loss is {loss}")
+
+        self.counteval += 1
 
         self.xmean = self.flatten()
-        arfitness = np.empty(self.Lambda)
-        arz = np.empty((self.Lambda, self.n))
-        arx = np.empty((self.Lambda, self.n))
+        arfitness = empty(self.Lambda)
+        arz = empty((self.Lambda, self.n))
+        arx = empty((self.Lambda, self.n))
         for i in range(self.Lambda):
-            arz[i] = self.sigma * np.random.randn(self.n)
-            arx[i] = self.xmean + self.sigma * self.B @ self.D @ arz[-1]
-            arfitness[i] = minimizethis(arx[-1])
+            arz[i] = self.sigma * randn(self.n)
+            arx[i] = self.xmean + self.sigma * self.B @ self.D @ arz[i]
+            arfitness[i] = self.minimizethis(weights=arx[i], x=x, y=y)
 
         arindex = np.argsort(arfitness)
-        self.xmean = arx[: self.mu].T @ self.wghts
-        zmean = arz[: self.mu].T @ self.wghts
+        self.xmean = arx.T @ self.wghts
+        zmean = arz.T @ self.wghts
 
         self.ps = (1 - self.csigma) * self.ps + (
             sqrt(self.csigma * (2 - self.csigma) * self.mueff)
@@ -385,22 +405,26 @@ class CMA(EvolutionaryStrategies):
 
         self.C = (
             (1 - self.c1 - self.cmu) * self.C
-            + self.c1 * (self.pc @ self.pc.T + (1 - hsig) * self.cc * (2 - self.cc) * self.C)
-            + self.cmu
-            * (self.B @ self.D @ arz[arindex[: self.mu]].T)
+            + self.c1 * (self.pc @ self.pc.T 
+            + (1 - hsig) * self.cc * (2 - self.cc) * self.C)
+            + self.cmu * (self.B @ self.D @ arz.T)
             @ np.diag(self.wghts)
-            @ (self.B @ self.D @ arz[arindex[: self.mu]].T).T
+            @ (self.B @ self.D @ arz.T).T
         )
 
         self.sigma = self.sigma * np.exp(
             (self.csigma / self.dsigma) * (np.linalg.norm(self.ps) / self.expN - 1)
         )
 
-        if self.counteval - self.eigeneval > (self.Lambda / (self.c1 + self.cmu) / self.n) / 10:
+        if self.counteval - self.eigeneval > self.eigenInterval:
             self.eigeneval = self.counteval
             self.C = np.triu(self.C) + np.transpose(np.triu(self.C, 1))
             self.D, self.B = np.linalg.eig(self.C)
             self.D = np.diag(sqrt(self.D))
+
+        if arfitness[arindex[0]] > (1-1/10000)*arfitness[arindex[int(np.ceil(0.7*self.Lambda))]]:
+            self.sigma = self.sigma * np.exp(0.2+self.csigma/self.dsigma)
+            print("warning: flat fitness, consider reformulating the objective")
 
         # Transform 'xopt' to the models' weight shape.
         xopt = arx[arindex[0]]
@@ -409,7 +433,7 @@ class CMA(EvolutionaryStrategies):
         # Determine the ultimatly selected mutants' performance on the training data.
         self.model.set_weights(selected_parent)
         score = arfitness[arindex[0]]
-        print(score)
+        print(f"score: {score}, \t sigma: {self.sigma}, \t epoch: {self.counteval}")
         return score, selected_parent
 
 

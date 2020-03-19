@@ -11,26 +11,19 @@ import keras
 from keras.datasets import mnist
 from keras import backend as K
 from keras.layers import Dense, Input, Flatten
-from keras import optimizers
 
 from evolutionary_keras.models import EvolModel
 import evolutionary_keras.optimizers
 
-from numpy.random import seed
-seed(1)
-import tensorflow
-tensorflow.random.set_seed(1)
+# from numpy.random import seed
+# seed(1)
 
-
-# from cmaes import CMA
-# import evolutionary_keras
-
+# from tensorflow import random
+# random.set_seed(1)
 
 batch_size = 128
 num_classes = 10
-epochs = 3000
-
-max_epochs = 40000
+epochs = 5
 
 # input image dimensions
 img_rows, img_cols = 28, 28
@@ -68,7 +61,7 @@ prediction = Dense(10, activation="sigmoid")(dense)
 
 model = EvolModel(inputs=inputs, outputs=prediction)
 
-myopt = evolutionary_keras.optimizers.CMA(sigma=0.3, population_size=20)
+myopt = evolutionary_keras.optimizers.CMA(sigma=0.15, population_size=20)
 model.compile(optimizer=myopt, loss="categorical_crossentropy", metrics=["accuracy"])
 
 history = model.fit(
