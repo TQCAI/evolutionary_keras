@@ -8,7 +8,7 @@ from copy import deepcopy
 import numpy as np
 from keras.optimizers import Optimizer
 from keras.utils.layer_utils import count_params
-from numpy import empty, floor, fmax, identity, log, sqrt, transpose, zeros
+from numpy import empty, floor, fmax, identity, log, sqrt, zeros
 from numpy.random import rand, randint, randn
 
 from evolutionary_keras.utilities import (compatibility_numpy,
@@ -428,7 +428,7 @@ class CMA(EvolutionaryStrategies):
             > (1 - 1 / 10000) * arfitness[arindex[int(np.ceil(0.7 * self.Lambda))]]
         ):
             self.sigma = self.sigma * np.exp(0.2 + self.csigma / self.dsigma)
-            print("warning: flat fitness, consider reformulating the objective")
+            print("warning: nearly flat fitness, consider reformulating the objective")
 
         # Transform 'xopt' to the models' weight shape.
         xopt = arx[arindex[0]]
@@ -447,59 +447,3 @@ class BFGS(EvolutionaryStrategies):
 
 class CeresSolver(EvolutionaryStrategies):
     pass
-
-
-# wpr = []
-# for i in range(Lambda):
-#     wpr.append(log((Lambda + 1) / 2) - log(i + 1))
-# mu = int(mu)
-
-# psumwgt = 0
-# nsumwgt = 0
-# psumwgtsqr = 0
-# nsumwgtsqr = 0
-# for i in range(Lambda):
-#     if i < mu:
-#         psumwgt += wpr[i]
-#         psumwgtsqr += wpr[i] ** 2
-#     else:
-#         nsumwgt += wpr[i]
-#         nsumwgtsqr += wpr[i] ** 2
-
-# mu_eff = psumwgt * psumwgt / psumwgtsqr
-# mu_eff_minus = nsumwgt ** 2 / nsumwgtsqr
-
-# alpha_cov = 2
-# cmupr = alpha_cov * (mu_eff - 2 + 1 / mu_eff) / ((n + 2) ** 2 + alpha_cov * mu_eff / 2)
-
-# csigma = (mu_eff + 2.0) / (n + mu_eff + 5.0)
-# dsigma = 1.0 + 2.0 * fmax(0, (sqrt((mu_eff - 1.0) / (n + 1.0))) - 1.0) + csigma
-# cc = (4.0 + mu_eff / n) / (n + 4.0 + 2.0 * mu_eff / n)
-# c1 = alpha_cov / (pow(n + 1.3, 2.0) + mu_eff)
-# cmu = min(1.0 - c1, cmupr)
-
-# sumwgtpos = 0
-# sumwgtneg = 0
-# for i in range(Lambda):
-#     if wpr[i] > 0:
-#         sumwgtpos += wpr[i]
-#     else:
-#         sumwgtneg += fabs(wpr[i])
-
-# alpha_mu_minus = 1.0 + c1 / cmu
-# alpha_mueff_minus = 1.0 + (2 * mu_eff_minus) / (mu_eff + 2.0)
-# alpha_posdef_minus = (1.0 - c1 - cmu) / (n * cmu)
-# alpha_min = fmin(alpha_mu_minus, fmin(alpha_mueff_minus, alpha_posdef_minus))
-
-# eigenInterval = (Lambda / (c1 + cmu) / n) / 10.0
-
-# # ********************************** Normalising weights  **********************************
-# wgts = zeros(Lambda)
-# for i in range(Lambda):
-#     if wpr[i] > 0:
-#         wgts[i] = wpr[i] * 1 / sumwgtpos
-#     else:
-#         wgts[i] = wpr[i] * alpha_min / sumwgtneg
-
-# sumtestpos = sum(wgts[:mu])
-# sumtestneg = sum(wgts[mu:])
