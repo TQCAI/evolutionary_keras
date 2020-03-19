@@ -232,7 +232,7 @@ class CMA(EvolutionaryStrategies):
             Maximimum total number of mutants tested during optimization
     """
 
-    def __init__(self, sigma=0.1, population_size=None, verbosity=1, *args, **kwargs):
+    def __init__(self, sigma=0.3, population_size=None, verbosity=1, *args, **kwargs):
         """
         As one might have noticed, 'CMA' does not allow the user to set a number of epochs, as this
         is dealth with by 'cma'. The default 'epochs' in EvolModel is one, meaning 'run step' is
@@ -245,57 +245,6 @@ class CMA(EvolutionaryStrategies):
         self.population_size = population_size
 
         super(CMA, self).__init__(*args, **kwargs)
-
-    def on_compile(self, model):
-        """ Function to be called by the model during compile time. Register the model `model` with
-        the optimizer.
-        """
-        self.model = model
-        self.shape = self.get_shape()
-        self.n = count_params(self.model.trainable_weights)
-
-        self.counteval = 0
-        if self.population_size is None:
-            self.Lambda = int(4 + floor(3 * log(self.n)))
-        else:
-            self.Lambda = self.population_size
-        print(f"The population size is {self.Lambda}")
-        self.mu = int(self.Lambda / 2)
-        self.wghts = log((self.Lambda + 1) / 2) - log([i + 1 for i in range(self.Lambda)])
-        self.mueff = np.sum(self.wghts[: self.mu]) ** 2 / np.sum(self.wghts[: self.mu] ** 2)
-        self.mueff_minus = np.sum(self.wghts[self.mu :]) ** 2 / np.sum(self.wghts[self.mu :] ** 2)
-
-        alpha_cov = 2
-        self.csigma = (self.mueff + 2) / (self.n + self.mueff + 5)
-        self.dsigma = 1 + 2 * fmax(0, sqrt((self.mueff - 1) / (self.n + 1)) - 1) + self.csigma
-        self.cc = (4 + self.mueff / self.n) / (self.n + 4 + 2 * self.mueff / self.n)
-        self.c1 = alpha_cov / ((self.n + 1.3) ** 2 + self.mueff)
-        cmupr = (
-            alpha_cov
-            * (self.mueff - 2 + 1 / self.mueff)
-            / ((self.n + 2) ** 2 + alpha_cov * self.mueff / 2)
-        )
-        self.cmu = np.fmin(1 - self.c1, cmupr)
-        
-        self.alpha_mu_minus = 1 + self.c1 / self.cmu
-        self.alpha_mueff_minus = 1 + (2 * self.mueff_minus) / (self.mueff + 2)
-        self.alpha_posdef_minus = (1 - self.c1 - self.cmu) / (self.n * self.cmu)
-        self.alpha_min = np.fmin(
-            self.alpha_mu_minus, np.fmin(self.alpha_mueff_minus, self.alpha_posdef_minus)
-        )
-
-        self.eigenInterval = self.Lambda / ((self.c1 + self.cmu) * self.n * 10)
-
-        self.wghts[: self.mu] /= np.sum(self.wghts[: self.mu])
-        self.wghts[self.mu :] *= self.alpha_min / np.fabs(np.sum(self.wghts[self.mu :]))
-
-        self.pc = zeros(self.n)
-        self.ps = zeros(self.n)
-        self.B = identity(self.n)
-        self.D = identity(self.n)
-        self.C = self.B @ self.D @ self.D @ self.B.T
-        self.eigeneval = 0
-        self.expN = sqrt(self.n) * (1 - 1 / (4 * self.n) + 1 / (21 * self.n ** 2))
 
     def get_shape(self):
         # we do all this to keep track of the position of the trainable weights
@@ -367,6 +316,59 @@ class CMA(EvolutionaryStrategies):
         loss = parse_eval(self.model.evaluate(x=x, y=y, verbose=0))
         return loss
 
+    def on_compile(self, model):
+        """ Function to be called by the model during compile time. Register the model `model` with
+        the optimizer.
+        """
+        self.model = model
+        self.shape = self.get_shape()
+        self.n = count_params(self.model.trainable_weights)
+
+        self.counteval = 0
+        if self.population_size is None:
+            self.Lambda = int(4 + floor(3 * log(self.n)))
+        else:
+            self.Lambda = self.population_size
+        print(f"The population size is {self.Lambda}")
+        self.mu = int(self.Lambda / 2)
+        self.wghts = log((self.Lambda + 1) / 2) - log([i + 1 for i in range(self.Lambda)])
+        self.mueff = np.sum(self.wghts[: self.mu]) ** 2 / np.sum(self.wghts[: self.mu] ** 2)
+        self.mueff_minus = np.sum(self.wghts[self.mu :]) ** 2 / np.sum(self.wghts[self.mu :] ** 2)
+
+        alpha_cov = 2
+        self.csigma = (self.mueff + 2) / (self.n + self.mueff + 5)
+        self.dsigma = 1 + 2 * fmax(0, sqrt((self.mueff - 1) / (self.n + 1)) - 1) + self.csigma
+        self.cc = (4 + self.mueff / self.n) / (self.n + 4 + 2 * self.mueff / self.n)
+        self.c1 = alpha_cov / ((self.n + 1.3) ** 2 + self.mueff)
+        cmupr = (
+            alpha_cov
+            * (self.mueff - 2 + 1 / self.mueff)
+            / ((self.n + 2) ** 2 + alpha_cov * self.mueff / 2)
+        )
+        self.cmu = np.fmin(1 - self.c1, cmupr)
+        
+        self.alpha_mu_minus = 1 + self.c1 / self.cmu
+        self.alpha_mueff_minus = 1 + (2 * self.mueff_minus) / (self.mueff + 2)
+        self.alpha_posdef_minus = (1 - self.c1 - self.cmu) / (self.n * self.cmu)
+        self.alpha_min = np.fmin(
+            self.alpha_mu_minus, np.fmin(self.alpha_mueff_minus, self.alpha_posdef_minus)
+        )
+
+        self.eigenInterval = self.Lambda / ((self.c1 + self.cmu) * self.n * 10)
+
+        self.wghts[: self.mu] /= np.sum(self.wghts[: self.mu])
+        self.wghts[self.mu :] *= self.alpha_min / np.fabs(np.sum(self.wghts[self.mu :]))
+
+        self.pc = zeros(self.n)
+        self.ps = zeros(self.n)
+        self.B = identity(self.n)
+        self.D = identity(self.n)
+        self.C = self.B @ self.D @ self.D @ self.B.T
+        self.eigeneval = 0
+        self.expN = sqrt(self.n) * (1 - 1 / (4 * self.n) + 1 / (21 * self.n ** 2))
+
+        self.xmean = self.flatten()
+
     def run_step(self, x, y):
         """ Wrapper to the optimizer"""
 
@@ -376,23 +378,30 @@ class CMA(EvolutionaryStrategies):
             print(f"The initial loss is {loss}")
         self.epoch += 1
 
-        self.xmean = self.flatten()
         arfitness = empty(self.Lambda)
+        yvals = empty((self.Lambda,self.n))
         arz = empty((self.Lambda, self.n))
         arx = empty((self.Lambda, self.n))
         for i in range(self.Lambda):
             self.counteval += 1
             arz[i] = self.sigma * randn(self.n)
-            arx[i] = self.xmean + self.sigma * self.B @ self.D @ arz[i]
+            yvals[i] = self.B @ self.D @ arz[i]
+            arx[i] = self.xmean + self.sigma * yvals[i]
             arfitness[i] = self.minimizethis(weights=arx[i], x=x, y=y)
 
         arindex = np.argsort(arfitness)
         self.xmean = arx.T @ self.wghts
         zmean = arz.T @ self.wghts
 
-        self.ps = (1 - self.csigma) * self.ps + (
-            sqrt(self.csigma * (2 - self.csigma) * self.mueff)
-        ) * self.B @ zmean
+        alpha = sqrt(self.csigma * (2 - self.csigma) * self.mueff)
+        beta = (1 - self.csigma)
+        Cinv = self.B @ np.linalg.inv(self.D) @ self.B.T
+        # self.ps = beta * self.ps + alpha * self.B @ zmean
+        self.ps = beta * self.ps + alpha * Cinv @ zmean
+        self.sigma *= np.exp(
+            (self.csigma / self.dsigma) * (np.linalg.norm(self.ps) / self.expN - 1)
+        )
+
         hl = np.linalg.norm(self.ps) / sqrt(1 - (1 - self.csigma)) ** (
             2 * self.counteval / self.Lambda
         )
@@ -401,28 +410,44 @@ class CMA(EvolutionaryStrategies):
             hsig = 1
         else:
             hsig = 0
-        self.pc = (1 - self.cc) * self.pc + hsig * sqrt(
-            self.cc * (2 - self.cc) * self.mueff
-        ) * self.B @ self.D * zmean
 
-        self.C = (
-            (1 - self.c1 - self.cmu) * self.C
-            + self.c1 * (self.pc @ self.pc.T + (1 - hsig) * self.cc * (2 - self.cc) * self.C)
-            + self.cmu
-            * (self.B @ self.D @ arz.T)
-            @ np.diag(self.wghts)
-            @ (self.B @ self.D @ arz.T).T
-        )
+        alpha = hsig*sqrt(self.cc * (2-self.cc) * self.mueff  )
+        self.pc = (1-self.cc)*self.pc
+        self.pc = alpha * zmean + self.pc
 
-        self.sigma = self.sigma * np.exp(
-            (self.csigma / self.dsigma) * (np.linalg.norm(self.ps) / self.expN - 1)
-        )
+        dhsig = (1-hsig)*self.cc*(2-self.cc)*self.mueff
+        weightsum = np.sum(self.wghts)
+        Cscale = 1+self.c1*dhsig - self.c1 - self.cmu * weightsum
+        self.C = Cscale * self.C
+
+        for i in range(self.Lambda):
+            yval = yvals[arindex[i]]
+            wo = self.wghts[i]
+            if wo < 0: 
+                cy = Cinv @ yval 
+                norm = np.linalg.norm(cy)
+                wo *= self.n / norm ** 2
+            self.C += self.cmu*wo*yval*yval
+
+        # self.pc = (1 - self.cc) * self.pc + hsig * sqrt(
+        #     self.cc * (2 - self.cc) * self.mueff
+        # ) * self.B @ self.D * zmean
+
+        # self.C = (
+        #     (1 - self.c1 - self.cmu) * self.C
+        #     + self.c1 * (self.pc @ self.pc.T + (1 - hsig) * self.cc * (2 - self.cc) * self.C)
+        #     + self.cmu
+        #     * (self.B @ self.D @ arz.T)
+        #     @ np.diag(self.wghts)
+        #     @ (self.B @ self.D @ arz.T).T
+        # )
 
         if self.counteval - self.eigeneval > self.eigenInterval:
             self.eigeneval = self.counteval
             self.C = np.triu(self.C) + np.transpose(np.triu(self.C, 1))
             self.D, self.B = np.linalg.eig(self.C)
-            self.D = np.diag(sqrt(self.D))
+            self.B = self.B.real
+            self.D = np.diag(sqrt(self.D.real))
 
         if (
             arfitness[arindex[0]]
@@ -431,15 +456,13 @@ class CMA(EvolutionaryStrategies):
             self.sigma = self.sigma * np.exp(0.2 + self.csigma / self.dsigma)
             print("warning: nearly flat fitness, consider reformulating the objective")
 
-        # Transform 'xopt' to the models' weight shape.
-        xopt = arx[arindex[0]]
-        selected_parent = self.undo_flatten(xopt)
+        selected_parent = self.undo_flatten(self.xmean)
+        loss = self.model.evaluate(x=x, y=y, verbose=False)
+        score = parse_eval(loss)
 
-        # Determine the ultimatly selected mutants' performance on the training data.
-        self.model.set_weights(selected_parent)
-        score = arfitness[arindex[0]]
-        print(f"score: {score}, \t sigma: {self.sigma}, \t epoch: {self.epoch}")
-        return score, selected_parent
+        print(f"score: {score:.3f} \t \t sigma: {self.sigma:.4f} \t \t epoch: {self.epoch}")
+
+        return loss, selected_parent
 
 
 class BFGS(EvolutionaryStrategies):

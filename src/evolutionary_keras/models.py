@@ -42,7 +42,7 @@ class EvolModel(Model):
             opt = optimizer_dict.get(optimizer.lower())
             # And instanciate it with default values
             optimizer = opt()
-            optimizer.on_compile(self)
+
         # Check whether the optimizer is an evolutionary optimizer
         if isinstance(optimizer, Evolutionary_Optimizers.EvolutionaryStrategies):
             self.is_genetic = True
