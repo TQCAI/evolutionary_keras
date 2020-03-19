@@ -23,7 +23,7 @@ import evolutionary_keras.optimizers
 
 batch_size = 128
 num_classes = 10
-epochs = 5
+epochs = 40000
 
 # input image dimensions
 img_rows, img_cols = 28, 28

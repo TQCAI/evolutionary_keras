@@ -8,9 +8,8 @@ from copy import deepcopy
 import numpy as np
 from keras.optimizers import Optimizer
 from keras.utils.layer_utils import count_params
-from numpy import (floor, fmax, identity, log, sqrt, transpose,
-                   zeros, empty)
-from numpy.random import randint, randn, rand
+from numpy import empty, floor, fmax, identity, log, sqrt, transpose, zeros
+from numpy.random import rand, randint, randn
 
 from evolutionary_keras.utilities import (compatibility_numpy,
                                           get_number_nodes, parse_eval)
@@ -262,9 +261,9 @@ class CMA(EvolutionaryStrategies):
             self.Lambda = self.population_size
         print(f"The population size is {self.Lambda}")
         self.mu = int(self.Lambda / 2)
-        self.wghts = log((self.Lambda + 1)/2) - log([i + 1 for i in range(self.Lambda)])
-        self.mueff = np.sum(self.wghts[:self.mu]) ** 2 / np.sum(self.wghts[:self.mu] ** 2)
-        self.mueff_minus = np.sum(self.wghts[self.mu:]) ** 2 / np.sum(self.wghts[self.mu:] ** 2)
+        self.wghts = log((self.Lambda + 1) / 2) - log([i + 1 for i in range(self.Lambda)])
+        self.mueff = np.sum(self.wghts[: self.mu]) ** 2 / np.sum(self.wghts[: self.mu] ** 2)
+        self.mueff_minus = np.sum(self.wghts[self.mu :]) ** 2 / np.sum(self.wghts[self.mu :] ** 2)
 
         alpha_cov = 2
         self.csigma = (self.mueff + 2) / (self.n + self.mueff + 5)
@@ -278,15 +277,17 @@ class CMA(EvolutionaryStrategies):
         )
 
         self.cmu = np.fmin(1 - self.c1, cmupr)
-        self.alpha_mu_minus = 1+self.c1/self.cmu
-        self.alpha_mueff_minus = 1+(2*self.mueff_minus)/(self.mueff+2)
-        self.alpha_posdef_minus = (1-self.c1-self.cmu)/(self.n*self.cmu)
-        self.alpha_min = np.fmin(self.alpha_mu_minus, np.fmin(self.alpha_mueff_minus, self.alpha_posdef_minus))
+        self.alpha_mu_minus = 1 + self.c1 / self.cmu
+        self.alpha_mueff_minus = 1 + (2 * self.mueff_minus) / (self.mueff + 2)
+        self.alpha_posdef_minus = (1 - self.c1 - self.cmu) / (self.n * self.cmu)
+        self.alpha_min = np.fmin(
+            self.alpha_mu_minus, np.fmin(self.alpha_mueff_minus, self.alpha_posdef_minus)
+        )
 
         self.eigenInterval = self.Lambda / ((self.c1 + self.cmu) * self.n * 10)
 
-        self.wghts[:self.mu] /= np.sum(self.wghts[:self.mu])
-        self.wghts[self.mu:] /= self.alpha_min * np.sum(self.wghts[self.mu:]) 
+        self.wghts[: self.mu] /= np.sum(self.wghts[: self.mu])
+        self.wghts[self.mu :] *= self.alpha_min / np.fabs(np.sum(self.wghts[self.mu :]))
 
         self.pc = zeros(self.n)
         self.ps = zeros(self.n)
@@ -346,7 +347,7 @@ class CMA(EvolutionaryStrategies):
         new_weights = []
         for i, layer_shape in enumerate(self.shape):
             flat_layer = flattened_weights[
-                self.length_flat_layer[i]: self.length_flat_layer[i]
+                self.length_flat_layer[i] : self.length_flat_layer[i]
                 + self.length_flat_layer[i + 1]
             ]
             new_weights.append(np.reshape(flat_layer, layer_shape))
@@ -405,9 +406,9 @@ class CMA(EvolutionaryStrategies):
 
         self.C = (
             (1 - self.c1 - self.cmu) * self.C
-            + self.c1 * (self.pc @ self.pc.T 
-            + (1 - hsig) * self.cc * (2 - self.cc) * self.C)
-            + self.cmu * (self.B @ self.D @ arz.T)
+            + self.c1 * (self.pc @ self.pc.T + (1 - hsig) * self.cc * (2 - self.cc) * self.C)
+            + self.cmu
+            * (self.B @ self.D @ arz.T)
             @ np.diag(self.wghts)
             @ (self.B @ self.D @ arz.T).T
         )
@@ -422,8 +423,11 @@ class CMA(EvolutionaryStrategies):
             self.D, self.B = np.linalg.eig(self.C)
             self.D = np.diag(sqrt(self.D))
 
-        if arfitness[arindex[0]] > (1-1/10000)*arfitness[arindex[int(np.ceil(0.7*self.Lambda))]]:
-            self.sigma = self.sigma * np.exp(0.2+self.csigma/self.dsigma)
+        if (
+            arfitness[arindex[0]]
+            > (1 - 1 / 10000) * arfitness[arindex[int(np.ceil(0.7 * self.Lambda))]]
+        ):
+            self.sigma = self.sigma * np.exp(0.2 + self.csigma / self.dsigma)
             print("warning: flat fitness, consider reformulating the objective")
 
         # Transform 'xopt' to the models' weight shape.
