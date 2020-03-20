@@ -232,7 +232,7 @@ class CMA(EvolutionaryStrategies):
             Maximimum total number of mutants tested during optimization
     """
 
-    def __init__(self, sigma=0.3, population_size=None, verbosity=1, *args, **kwargs):
+    def __init__(self, sigma=0.2, population_size=None, verbosity=1, *args, **kwargs):
         """
         As one might have noticed, 'CMA' does not allow the user to set a number of epochs, as this
         is dealth with by 'cma'. The default 'epochs' in EvolModel is one, meaning 'run step' is
@@ -369,15 +369,7 @@ class CMA(EvolutionaryStrategies):
 
         self.xmean = self.flatten()
 
-    def run_step(self, x, y):
-        """ Wrapper to the optimizer"""
-
-        if self.counteval == 0:
-            self.epoch = 0
-            loss = parse_eval(self.model.evaluate(x=x, y=y, verbose=0))
-            print(f"The initial loss is {loss}")
-        self.epoch += 1
-
+    def CMAMinimizer(self,x,y):
         arfitness = empty(self.Lambda)
         yvals = empty((self.Lambda,self.n))
         arz = empty((self.Lambda, self.n))
@@ -395,9 +387,11 @@ class CMA(EvolutionaryStrategies):
 
         alpha = sqrt(self.csigma * (2 - self.csigma) * self.mueff)
         beta = (1 - self.csigma)
-        Cinv = self.B @ np.linalg.inv(self.D) @ self.B.T
-        # self.ps = beta * self.ps + alpha * self.B @ zmean
+        Dinv = np.diag([1/i for i in np.diag(self.D)]) 
+        Cinv = self.B @ Dinv @ self.B.T
         self.ps = beta * self.ps + alpha * Cinv @ zmean
+        # self.ps = beta * self.ps + alpha * self.B @ zmean
+        
         self.sigma *= np.exp(
             (self.csigma / self.dsigma) * (np.linalg.norm(self.ps) / self.expN - 1)
         )
@@ -446,8 +440,8 @@ class CMA(EvolutionaryStrategies):
             self.eigeneval = self.counteval
             self.C = np.triu(self.C) + np.transpose(np.triu(self.C, 1))
             self.D, self.B = np.linalg.eig(self.C)
-            self.B = self.B.real
-            self.D = np.diag(sqrt(self.D.real))
+            self.B = self.B
+            self.D = np.diag(sqrt(self.D))
 
         if (
             arfitness[arindex[0]]
@@ -455,12 +449,25 @@ class CMA(EvolutionaryStrategies):
         ):
             self.sigma = self.sigma * np.exp(0.2 + self.csigma / self.dsigma)
             print("warning: nearly flat fitness, consider reformulating the objective")
+        
+
+    def run_step(self, x, y):
+        """ Wrapper to the optimizer"""
+
+        if self.counteval == 0:
+            self.epoch = 0
+            self.model.set_weights(self.undo_flatten(self.xmean))
+            score = parse_eval(self.model.evaluate(x=x, y=y, verbose=0))
+            print(f"The initial loss is {score:.4}")
+        self.epoch += 1
+
+        self.CMAMinimizer(x=x,y=y)
 
         selected_parent = self.undo_flatten(self.xmean)
         loss = self.model.evaluate(x=x, y=y, verbose=False)
         score = parse_eval(loss)
 
-        print(f"score: {score:.3f} \t \t sigma: {self.sigma:.4f} \t \t epoch: {self.epoch}")
+        print(f"score: {score:.4} \t sigma: {self.sigma:.4} \t epoch: {self.epoch}")
 
         return loss, selected_parent
 
