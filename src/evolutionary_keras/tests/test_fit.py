@@ -1,8 +1,7 @@
 """ Tests for checking that we can compile and run with all the included optimziers """
 
 import numpy as np
-import keras.backend as K
-from keras.layers import Input, Dense
+from tensorflow.keras.layers import Dense, Input
 
 from evolutionary_keras.models import EvolModel
 from evolutionary_keras.optimizers import NGA
