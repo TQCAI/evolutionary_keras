@@ -1,7 +1,7 @@
 """
     Module including some useful functions
 """
-from keras import backend as K
+from tensorflow.keras import backend as K
 
 def get_number_nodes(layer):
     """ Given a keras layer, outputs the number of nodes """

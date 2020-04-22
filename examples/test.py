@@ -1,27 +1,15 @@
-""" from __future__ import print_function
-import keras
-from keras.datasets import mnist
-from keras.models import Sequential
-from keras.layers import Dense, Dropout, Flatten
-from keras.layers import Conv2D, MaxPooling2D
-from keras import backend as K
- """
-
-import keras
-from keras.datasets import mnist
-from keras import backend as K
-from keras.layers import Dense, Input, Flatten
+import tensorflow as tf
+from tensorflow.keras.datasets import mnist
+from tensorflow.keras import backend as K
+from tensorflow.keras.layers import Dense, Input, Flatten
 
 from evolutionary_keras.models import EvolModel
-# from cmaes import CMA
 import evolutionary_keras.optimizers
 
 
 batch_size = 128
 num_classes = 10
-epochs = 40000
-
-max_epochs = 40000
+epochs = 4
 
 # input image dimensions
 img_rows, img_cols = 28, 28
@@ -47,8 +35,8 @@ print(x_train.shape[0], "train samples")
 print(x_test.shape[0], "test samples")
 
 # convert class vectors to binary class matrices
-y_train = keras.utils.to_categorical(y_train, num_classes)
-y_test = keras.utils.to_categorical(y_test, num_classes)
+y_train = tf.keras.utils.to_categorical(y_train, num_classes)
+y_test = tf.keras.utils.to_categorical(y_test, num_classes)
 
 inputs = Input(shape=(28, 28, 1))
 flatten = Flatten()(inputs)
@@ -58,7 +46,7 @@ prediction = Dense(10, activation="softmax")(dense)
 
 model = EvolModel(inputs=inputs, outputs=prediction)
 
-myopt = evolutionary_keras.optimizers.NGA(population_size=20, sigma_init=15)
+myopt = evolutionary_keras.optimizers.NGA(population_size=2, sigma_init=15)
 model.compile(optimizer=myopt, loss="categorical_crossentropy", metrics=["accuracy"])
 
 history = model.fit(
