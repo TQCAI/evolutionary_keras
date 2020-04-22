@@ -1,4 +1,4 @@
-""" Tests for checking that we can compile and run with all the included optimziers """
+""" Tests for checking that we can compile and run with all the included optimizers """
 
 import numpy as np
 from tensorflow.keras.layers import Dense, Input
