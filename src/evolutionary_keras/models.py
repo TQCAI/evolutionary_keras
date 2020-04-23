@@ -27,7 +27,7 @@ class EvolModel(Model):
         super().__init__(*args, **kwargs)
         self.is_genetic = False
         self.opt_instance = None
-        self.history = History()
+        self.history_info = History()
 
     def parse_optimizer(self, optimizer):
         """ Checks whether the optimizer is genetic and creates and optimizer instance in case a
@@ -52,6 +52,7 @@ class EvolModel(Model):
         self.parse_optimizer(optimizer)
         # If the optimizer is genetic, compile using keras while setting a random (keras supported)
         # gradient descent optimizer
+        self.history_info.set_model(self)
         if self.is_genetic:
             super().compile(optimizer="rmsprop", **kwargs)
         else:
@@ -59,7 +60,7 @@ class EvolModel(Model):
 
     def perform_genetic_fit(self, x=None, y=None, epochs=1, verbose=0, validation_data=None):
         # Prepare the history for the initial epoch
-        self.history.on_train_begin()
+        self.history_info.on_train_begin()
         # Validation data is currently not being used!!
         if validation_data is not None:
             log.warning("Validation data is not used at the moment by the Genetic Algorithms!!")
@@ -93,8 +94,8 @@ class EvolModel(Model):
                     history_data = dict(zip(metricas, score))
                 else:
                     raise e
-            self.history.on_epoch_end(epoch, history_data)
-        return self.history
+            self.history_info.on_epoch_end(epoch, history_data)
+        return self.history_info
 
     def fit(self, x=None, y=None, validation_data=None, epochs=1, verbose=0, **kwargs):
         """ If the optimizer is genetic, the fitting procedure consists on executing `run_step` for
